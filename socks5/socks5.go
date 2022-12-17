@@ -17,7 +17,7 @@ METHODS	可用的认证方式列表
 func Auth(client net.Conn) (err error) {
 	buf := make([]byte, 256)
 
-	// 读取 VER 和 NMETHODS
+	// Read the version byte
 	n, err := io.ReadFull(client, buf[:2])
 	if n != 2 {
 		return errors.New("reading header: " + err.Error())
@@ -28,18 +28,58 @@ func Auth(client net.Conn) (err error) {
 		return errors.New("invalid version")
 	}
 
-	// 读取 METHODS 列表
+	// Get the methods
+	// TODO: abstract authenticate
 	n, err = io.ReadFull(client, buf[:nMethods])
 	if n != nMethods {
 		return errors.New("reading methods: " + err.Error())
 	}
 
-	/*
-		VER	也是0x05，对上 SOCKS 5 的暗号
-		METHOD	选定的认证方式；其中 0x00 表示不需要认证，0x02 是用户名/密码认证，……
-	*/
-	n, err = client.Write([]byte{0x05, 0x00})
+	// Password Authenticate
+	n, err = client.Write([]byte{0x05, 0x02})
 	if n != 2 || err != nil {
+		return errors.New("write rsp err: " + err.Error())
+	}
+
+	// Get the version and username length
+	header := []byte{0, 0}
+	if _, err := io.ReadAtLeast(client, header, 2); err != nil {
+		return err
+	}
+
+	// Ensure we are compatible
+	if header[0] != 1 {
+		return fmt.Errorf("Unsupported auth version: %v", header[0])
+	}
+
+	// Get the user name
+	userLen := int(header[1])
+	user := make([]byte, userLen)
+	if _, err := io.ReadAtLeast(client, user, userLen); err != nil {
+		return err
+	}
+
+	// Get the password length
+	if _, err := client.Read(header[:1]); err != nil {
+		return err
+	}
+
+	// Get the password
+	passLen := int(header[0])
+	pass := make([]byte, passLen)
+	if _, err := io.ReadAtLeast(client, pass, passLen); err != nil {
+		return err
+	}
+
+	// Valid user
+	if string(user) != "123" || string(pass) != "123" {
+		if n, err = client.Write([]byte{1, 1}); n != 2 || err != nil {
+			return errors.New("write rsp err: " + err.Error())
+		}
+		return errors.New("username or password err")
+	}
+
+	if n, err = client.Write([]byte{1, 0}); n != 2 || err != nil {
 		return errors.New("write rsp err: " + err.Error())
 	}
 
