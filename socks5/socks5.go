@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 )
 
@@ -147,6 +148,7 @@ func Connect(client net.Conn) (net.Conn, error) {
 
 	// 创建一个到 dst 的连接
 	destAddrPort := fmt.Sprintf("%s:%d", addr, port)
+	log.Printf("%s -> %s -> %s", client.RemoteAddr(), client.LocalAddr(), destAddrPort)
 	dest, err := net.Dial("tcp", destAddrPort)
 	if err != nil {
 		return nil, errors.New("dial dst: " + err.Error())
