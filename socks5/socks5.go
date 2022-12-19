@@ -1,6 +1,7 @@
 package socks5
 
 import (
+	"bufio"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -15,76 +16,18 @@ VER	本次请求的协议版本号，取固定值 0x05（表示socks 5）
 NMETHODS 客户端支持的认证方式数量，可取值 1~255
 METHODS	可用的认证方式列表
 */
-func Auth(client net.Conn) (err error) {
-	buf := make([]byte, 256)
+func Auth(conn net.Conn) (err error) {
+	var cred Authenticator
 
-	// Read the version byte
-	n, err := io.ReadFull(client, buf[:2])
-	if n != 2 {
-		return errors.New("reading header: " + err.Error())
+	cred = UserPassAuthenticator{
+		Credentials: StaticCredentials{
+			"123": "123",
+		},
 	}
 
-	ver, nMethods := int(buf[0]), int(buf[1])
-	if ver != 5 {
-		return errors.New("invalid version")
-	}
+	bufConn := bufio.NewReader(conn)
 
-	// Get the methods
-	// TODO: abstract authenticate
-	n, err = io.ReadFull(client, buf[:nMethods])
-	if n != nMethods {
-		return errors.New("reading methods: " + err.Error())
-	}
-
-	// Password Authenticate
-	n, err = client.Write([]byte{0x05, 0x02})
-	if n != 2 || err != nil {
-		return errors.New("write rsp err: " + err.Error())
-	}
-
-	// Get the version and username length
-	header := []byte{0, 0}
-	if _, err := io.ReadAtLeast(client, header, 2); err != nil {
-		return err
-	}
-
-	// Ensure we are compatible
-	if header[0] != 1 {
-		return fmt.Errorf("Unsupported auth version: %v", header[0])
-	}
-
-	// Get the user name
-	userLen := int(header[1])
-	user := make([]byte, userLen)
-	if _, err := io.ReadAtLeast(client, user, userLen); err != nil {
-		return err
-	}
-
-	// Get the password length
-	if _, err := client.Read(header[:1]); err != nil {
-		return err
-	}
-
-	// Get the password
-	passLen := int(header[0])
-	pass := make([]byte, passLen)
-	if _, err := io.ReadAtLeast(client, pass, passLen); err != nil {
-		return err
-	}
-
-	// Valid user
-	if string(user) != "123" || string(pass) != "123" {
-		if n, err = client.Write([]byte{1, 1}); n != 2 || err != nil {
-			return errors.New("write rsp err: " + err.Error())
-		}
-		return errors.New("username or password err")
-	}
-
-	if n, err = client.Write([]byte{1, 0}); n != 2 || err != nil {
-		return errors.New("write rsp err: " + err.Error())
-	}
-
-	return nil
+	return cred.Authenticate(bufConn, conn)
 }
 
 /*
@@ -105,7 +48,7 @@ func Connect(client net.Conn) (net.Conn, error) {
 	}
 
 	ver, cmd, _, atyp := buf[0], buf[1], buf[2], buf[3]
-	if ver != 5 || cmd != 1 {
+	if ver != Socks5Version || cmd != CmdConnect {
 		return nil, errors.New("invalid ver/cmd")
 	}
 
